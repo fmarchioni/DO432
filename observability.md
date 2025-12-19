@@ -219,6 +219,43 @@ Permette di:
 
 👉 È qui che si governa l’osservabilità multicluster.
 
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thanos-object-storage
+  namespace: open-cluster-management-observability
+type: Opaque
+stringData:
+  thanos.yaml: |
+    type: s3
+    config:
+      bucket: observability-bucket-030b2b89-6c7e-4883-a26e-ea8939dfc875
+      endpoint: s3-openshift-storage.apps.ocp4.example.com
+      insecure: true
+      access_key: nOvOOrBFBlF4Bc1NZaIv
+      secret_key: sc8Z3KPnF8Ik035inA0ji9Nkz3g2hBMnVe7EFWIT
+```
+
+```yaml
+apiVersion: observability.open-cluster-management.io/v1beta2
+kind: MultiClusterObservability
+metadata:
+  name: observability
+spec:
+  observabilityAddonSpec:
+    enableMetrics: true
+  storageConfig:
+    metricObjectStorage:
+      key: thanos.yaml
+      name: thanos-object-storage #### secret
+    storageClass: nfs-storage
+    alertmanagerStorageSize: 1Gi
+    compactStorageSize: 1Gi
+    receiveStorageSize: 1Gi
+    ruleStorageSize: 1Gi
+    storeStorageSize: 1Gi
+```
 ---
 
 ## 🔟 Best practice architetturali
