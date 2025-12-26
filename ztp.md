@@ -1,6 +1,8 @@
 
 # 📌 RHACM + ZTP – Checklist completa per il corso Telco
 
+Il cliente telco con ZTP (Zero Touch Provisioning) vuole automatizzare completamente il provisioning e la configurazione dei cluster OpenShift ai siti di rete (core, edge, RAN) senza intervento manuale; RHACM fornisce il controllo centralizzato, GitOps ZTP, policy declarative e integrazione con assisted service per realizzare questa visione in scala
+
 ## 🧠 Mental model (prima di tutto)
 
 > **ACM non è il protagonista.
@@ -288,20 +290,41 @@ Andrea F. li ha citati:
 
 ---
 
-## 🧩 Come ti suggerisco di impostare il corso
 
-### Ordine ideale (telco-friendly):
+### Checklist operativa per l’amministratore dell’Hub
+1. **Definire obiettivi e scala**  
+   - Numero iniziale e target a regime; tipologia siti (SNO vs small cluster); requisiti disconnected e compliance.  
 
-1. **ZTP workflow end-to-end**
-2. Git repo → Argo → ACM → Hive
-3. Policy Generator
-4. ClusterImageSet + disconnected
-5. CGU & day-2
-6. Limiti attuali + roadmap
+2. **Provisioning Hub e alta disponibilità**  
+   - Deploy dell’**Hub RHACM** ridondato; dimensionamento per il numero di managed clusters previsto; abilitare ArgoCD/GitOps sul Hub.
+
+3. **Abilitare Assisted Service e GitOps ZTP**  
+   - Installare e configurare **assisted-service**; abilitare il pipeline GitOps ZTP e i generator (PolicyGenerator/PolicyGenTemplate) per creare SiteConfig e CR di installazione.
+
+4. **Preparare mirror registry e immagini RHCOS/RootFS**  
+   - Caricare ISO, rootfs e immagini nel mirror per ambienti disconnected; testare accesso e firma delle immagini.
+
+5. **Strutturare il repository Git ZTP**  
+   - Definire branch strategy, template SiteConfig per SNO/small cluster, e manifest per networking, storage e CNF; impostare protezione branch e CI per validazione.
+
+6. **Creare segreti e accessi per host bare‑metal**  
+   - Generare managed bare‑metal host secrets, configurare discovery ISO e kernel args per boot automatico dei nodi.
+
+7. **Policy, compliance e configurazioni telco**  
+   - Modellare **PolicyGenerator** per profili vRAN/DU; definire policy di sicurezza, network (BGP/VLAN), e firmware management.
+
+8. **Monitoraggio, logging e alerting**  
+   - Abilitare monitoraggio installazioni, ArgoCD sync status, e alert per failure di SiteConfig o installazioni fallite.
+
+9. **Test PoC e runbook di rollback**  
+   - Eseguire PoC su 2–3 siti; definire runbook per rollback, rimozione site dalla pipeline e pulizia dei contenuti obsoleti.
+
+10. **Sicurezza supply chain e governance**  
+    - Firmare immagini/ISO, controllare accessi al repo Git, definire RBAC Hub e policy di approvazione.
+
+11. **Documentazione e formazione**  
+    - Documentare playbook ZTP, checklist hardware, e procedure di troubleshooting per operatori sul campo.
 
 ---
 
-## 🧠 Frase chiave di chiusura (golden)
-
-> *“In Telecom non usiamo ACM per ‘gestire cluster’, ma per rendere ZTP riproducibile, governabile e auditabile.”*
 
