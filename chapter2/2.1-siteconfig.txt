@@ -1,0 +1,228 @@
+# Abilita SiteConfig nell'hub
+[sysadmin@bastion-host ~]$ oc patch multiclusterhubs.operator.open-cluster-management.io multiclusterhub \
+  -n open-cluster-management \
+  --type json -p='[{"op":"add","path":"/spec/overrides/components/-","value":{"name":"siteconfig","enabled":true}}]'
+
+# Verifica pod SiteConfig
+[sysadmin@bastion-host ~]$ oc -n open-cluster-management get pod | grep siteconfig
+
+# Controlla template disponibili
+[sysadmin@bastion-host ~]$ oc -n open-cluster-management get cm
+
+# Crea namespace del cluster
+[sysadmin@bastion-host ~]$ cat <<EOF > clusterinstance-namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telco-cluster-1
+EOF
+
+[sysadmin@bastion-host ~]$ oc apply -f clusterinstance-namespace.yaml
+
+# Crea pull-secret
+[sysadmin@bastion-host ~]$ oc create secret generic pull-secret \
+  -n telco-cluster-1 \
+  --from-file=.dockerconfigjson=./pull-secret.json \
+  --type=kubernetes.io/dockerconfigjson
+
+[sysadmin@bastion-host ~]$ oc get secret -n telco-cluster-1
+
+# Crea ClusterInstance (image-based)
+[sysadmin@bastion-host ~]$ cat <<EOF > clusterinstance.yaml
+apiVersion: siteconfig.open-cluster-management.io/v1alpha1
+kind: ClusterInstance
+metadata:
+  name: telco-cluster-1
+  namespace: telco-cluster-1
+spec:
+  clusterName: telco-cluster-1
+  baseDomain: example.com
+  networkType: OVNKubernetes
+  clusterImageSetNameRef: ocp-4.12.0-x86-64
+  pullSecretRef:
+    name: pull-secret
+  templateRefs:
+    - name: ibi-cluster-templates-v1
+      namespace: open-cluster-management
+  nodes:
+    - name: master-0
+      profile: master
+      templateRefs:
+        - name: ibi-node-templates-v1
+          namespace: open-cluster-management
+EOF
+
+# Applica ClusterInstance
+[sysadmin@bastion-host ~]$ oc apply -f clusterinstance.yaml
+
+# Verifica ClusterInstance
+[sysadmin@bastion-host ~]$ oc get clusterinstance -n telco-cluster-1
+[sysadmin@bastion-host ~]$ oc describe clusterinstance telco-cluster-1 -n telco-cluster-1
+
+# Verifica ClusterDeployment generato
+[sysadmin@bastion-host ~]$ oc get clusterdeployment -n telco-cluster-1
+
+# Controlla log SiteConfig
+[sysadmin@bastion-host ~]$ oc -n open-cluster-management logs -l app=siteconfig-controller --tail 5
+
+# Scaling: aggiungi un worker
+[sysadmin@bastion-host ~]$ cat <<EOF > clusterinstance-scaled.yaml
+apiVersion: siteconfig.open-cluster-management.io/v1alpha1
+kind: ClusterInstance
+metadata:
+  name: telco-cluster-1
+  namespace: telco-cluster-1
+spec:
+  clusterName: telco-cluster-1
+  baseDomain: example.com
+  networkType: OVNKubernetes
+  clusterImageSetNameRef: ocp-4.12.0-x86-64
+  pullSecretRef:
+    name: pull-secret
+  templateRefs:
+    - name: ibi-cluster-templates-v1
+      namespace: open-cluster-management
+  nodes:
+    - name: master-0
+      profile: master
+      templateRefs:
+        - name: ibi-node-templates-v1
+          namespace: open-cluster-management
+    - name: worker-0
+      profile: worker
+      templateRefs:
+        - name: ibi-node-templates-v1
+          namespace: open-cluster-management
+EOF
+
+# Applica scaling
+[sysadmin@bastion-host ~]$ oc apply -f clusterinstance-scaled.yaml
+
+# Verifica nuovi nodi
+[sysadmin@bastion-host ~]$ oc get baremetalhost -n telco-cluster-1
+
+-----------------------------------------------------
+
+ 
+# 🎤 **Spiegazione orale — come la diresti in aula**
+
+“Ragazzi, adesso vi faccio vedere il flusso completo di provisioning di un cluster usando **SiteConfig** e **ClusterInstance**.  
+Questo è esattamente il meccanismo che userete quando farete **ZTP** su larga scala: cioè quando dovrete creare decine o centinaia di cluster in modo ripetibile, senza toccare nulla a mano.
+
+L’idea è semplice:  
+**noi non installiamo il cluster.  
+Noi descriviamo il cluster.  
+E SiteConfig lo installa per noi.**  
+
+Quindi guardiamo lo script passo per passo.”
+
+---
+
+## **1. Abilitiamo SiteConfig sull’hub**
+
+“Per prima cosa abilitiamo il componente SiteConfig dentro il MultiClusterHub.  
+Finché non lo abilitiamo, l’hub non ha i template necessari per generare i manifest di installazione.
+
+Il patch che vedete serve solo a dire:  
+> ‘Ehi MCH, attiva anche il componente SiteConfig.’
+
+Una volta fatto, controlliamo che il pod sia partito.  
+Se il controller è in running, siamo pronti.”
+
+---
+
+## **2. Verifichiamo che i template siano presenti**
+
+“SiteConfig funziona *solo* se nell’hub ci sono i template di default:  
+- quelli per l’installazione assisted  
+- quelli per l’installazione image‑based
+
+Sono ConfigMap che contengono i manifest “scheletro” del cluster.  
+Quando li vediamo, significa che l’hub è pronto a generare cluster.”
+
+---
+
+## **3. Creiamo il namespace del cluster**
+
+“Ogni cluster che creiamo ha un suo namespace dedicato.  
+È lì che vivono:  
+- il ClusterInstance  
+- i segreti  
+- i manifest generati  
+- e tutte le risorse di provisioning
+
+Quindi prima cosa: creiamo il namespace.”
+
+---
+
+## **4. Creiamo i segreti necessari**
+
+“Il cluster deve potersi autenticare per scaricare le immagini di OpenShift.  
+Per questo creiamo il **pull‑secret**.
+
+Se fossimo in modalità assisted, servirebbe anche il BMC secret.  
+Nel nostro esempio image‑based non ci serve.”
+
+---
+
+## **5. Creiamo il ClusterInstance**
+
+“Questo è il cuore del provisioning.  
+Il ClusterInstance è la *descrizione* del cluster:  
+- nome  
+- dominio  
+- network type  
+- immagine OCP da usare  
+- template da applicare  
+- nodi da creare
+
+È come dire a SiteConfig:  
+> ‘Questo è il cluster che voglio.  
+> Riempimi i template e installalo.’”
+
+---
+
+## **6. Applichiamo il ClusterInstance**
+
+“Quando facciamo `oc apply`, parte la magia.
+
+SiteConfig prende il ClusterInstance,  
+riempie i template,  
+fa un dry‑run,  
+e se tutto è ok applica i manifest veri:
+
+- ClusterDeployment  
+- InfraEnv  
+- ManagedCluster  
+- Klusterlet  
+- e tutto il resto della pipeline di provisioning.
+
+Da questo momento l’installazione è in corso.”
+
+---
+
+## **7. Monitoriamo lo stato**
+
+“Con `oc get` e `oc describe` possiamo vedere:  
+- se il ClusterInstance è valido  
+- se il ClusterDeployment è in provisioning  
+- se le condizioni stanno avanzando
+
+E con i log del controller vediamo esattamente cosa sta facendo SiteConfig.”
+
+---
+
+## **8. Facciamo scaling del cluster**
+
+“Una volta che il cluster è installato, lo scaling è banale.  
+Non tocchiamo nodi, non tocchiamo BareMetalHost, non tocchiamo nulla.
+
+Aggiungiamo un nodo nella lista `spec.nodes` del ClusterInstance.  
+Applichiamo.  
+E SiteConfig genera automaticamente i manifest per il nuovo nodo.
+
+È così che si fa ZTP:  
+**dichiari cosa vuoi, non come farlo.**”
+
+---
+ 
